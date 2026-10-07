@@ -1,30 +1,25 @@
-Inventory Scanner POC — iPhone / GitHub Pages
+Guided Pick AprilTag POC v3
 
-Purpose
--------
-This is a static proof of concept. It uses the iPhone camera to read a QR code
-and checks whether its value is BIN-A04. No inventory or company data is stored.
+Replace the contents of your existing GitHub Pages scanner repo with the contents of this folder.
+Keep the js/ folder intact.
 
-GitHub Pages setup
-------------------
-1. Create a new GitHub repository, e.g. inventory-scanner-poc.
-2. Upload index.html from this folder to the repository root.
-3. In the repository, open Settings > Pages.
-4. Under Build and deployment, choose "Deploy from a branch".
-5. Select the main branch and /(root), then Save.
-6. GitHub will provide an HTTPS Pages address once deployment finishes.
-7. Open that HTTPS address in Safari on your iPhone.
-8. Tap Start Camera and allow camera access.
-9. Point the camera at a QR code whose contents are exactly: BIN-A04
+Then:
+  git add .
+  git commit -m "Switch guided picker to AprilTags"
+  git push origin master
 
-Expected behavior
------------------
-BIN-A04 -> green border + Correct marker
-Anything else -> red border + Wrong marker
+On iPhone:
+- reopen/refresh the GitHub Pages URL
+- confirm heading says "Guided Pick — AprilTag POC"
+- choose BIN-A01 / Tag 0
+- Start Camera
+- point at the printed BIN-A01 tag36h11 marker
 
-Notes
------
-- The QR decoder is jsQR loaded from jsDelivr, so the phone needs internet access.
-- This version does not communicate with the Python server.
-- It intentionally contains no real inventory/customer/NetSuite data.
-- Once scanning is proven, the next version can add tasks and a backend API.
+This build uses the exact AprilTag JS/WASM assets from the uploaded apriltag-base clone.
+Detector settings favor distance/accuracy over frame rate:
+- tag36h11 only
+- quadDecimate 1.0
+- refineEdges true
+- 1280px processing width when available
+
+LICENSE and NOTICE from the upstream project are included.

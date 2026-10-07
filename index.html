@@ -4,196 +4,126 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <meta name="theme-color" content="#05070b">
-<title>Guided Pick AR POC</title>
+<title>Guided Pick — AprilTag POC</title>
 <style>
-*{box-sizing:border-box}
-html,body{margin:0;background:#05070b;color:white;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
-main{max-width:760px;margin:auto;padding:14px}
-h1{font-size:1.3rem;margin:5px 0}
-p{color:#aeb8c8;margin:4px 0 12px}
-.camera{position:relative;width:100%;overflow:hidden;border-radius:16px;background:#000;aspect-ratio:3/4;border:1px solid #293241}
-video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
-canvas{pointer-events:none}
-.panel{background:#111722;border:1px solid #293241;border-radius:14px;padding:12px;margin-top:12px}
-.row{display:flex;gap:8px}
-button,select{min-height:46px;border:0;border-radius:11px;font-size:1rem;font-weight:700;padding:9px 12px}
-button{flex:1;background:white;color:#10151e}
-button.alt{background:#303b4d;color:white}
-select{width:100%;background:#202938;color:white;border:1px solid #435067}
-.label{font-size:.78rem;color:#91a0b5;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
-#status{font-weight:700;margin-top:10px;line-height:1.35}
-.hint{font-size:.88rem;color:#91a0b5;margin-top:8px}
+*{box-sizing:border-box} body{margin:0;background:#05070b;color:#fff;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:800px;margin:auto;padding:12px} h1{font-size:1.35rem;margin:4px 0}.sub{color:#a9b4c5;margin:4px 0 12px}
+.viewport{position:relative;width:100%;background:#000;border:1px solid #2b3545;border-radius:16px;overflow:hidden;aspect-ratio:9/16}
+video{display:none} canvas{position:absolute;inset:0;width:100%;height:100%}
+.card{background:#111722;border:1px solid #2b3545;border-radius:14px;padding:12px;margin-top:12px}
+label.small{display:block;color:#93a1b5;font-size:.78rem;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+select,button{min-height:46px;border-radius:11px;font-size:1rem;font-weight:700;padding:9px 12px}
+select{width:100%;background:#202938;color:#fff;border:1px solid #435067}
+.row{display:flex;gap:8px;margin-top:10px} button{flex:1;border:0;background:#fff;color:#10151e}button.alt{background:#303b4d;color:#fff}
+#status{font-weight:700;margin-top:10px}.metrics{color:#9dacbf;font-size:.88rem;margin-top:6px}
+.legend{font-size:.86rem;color:#9dacbf;margin-top:8px;line-height:1.35}
 </style>
 </head>
 <body>
 <main>
-<h1>Guided Pick — AR Marker POC</h1>
-<p>Choose a target bin, start the camera, then look across your QR labels.</p>
+<h1>Guided Pick — AprilTag POC</h1>
+<p class="sub">Live bin finding using tag36h11 markers • optimized for detection distance</p>
 
-<div class="camera" id="cameraBox">
-  <video id="video" playsinline muted></video>
-  <canvas id="overlay"></canvas>
-</div>
+<div class="viewport"><video id="video" playsinline muted></video><canvas id="display"></canvas></div>
 
-<div class="panel">
-  <div class="label">Target location</div>
-  <select id="target">
-    <option>BIN-A01</option><option>BIN-A02</option><option>BIN-A03</option>
-    <option selected>BIN-A04</option><option>BIN-A05</option>
-    <option>BIN-B01</option><option>BIN-B02</option><option>BIN-B03</option>
-    <option>BIN-B04</option><option>BIN-B05</option>
-  </select>
-  <div class="row" style="margin-top:10px">
-    <button id="start">Start Camera</button>
-    <button id="stop" class="alt">Stop</button>
-  </div>
-  <div id="status">Camera not started.</div>
-  <div class="hint">The app highlights only the selected bin. Move the camera slowly across the labels.</div>
+<div class="card">
+<label class="small" for="target">Target bin</label>
+<select id="target">
+<option value="0">BIN-A01 — Tag 0</option><option value="1">BIN-A02 — Tag 1</option>
+<option value="2">BIN-A03 — Tag 2</option><option value="3">BIN-A04 — Tag 3</option>
+<option value="4">BIN-A05 — Tag 4</option><option value="5">BIN-B01 — Tag 5</option>
+<option value="6">BIN-B02 — Tag 6</option><option value="7">BIN-B03 — Tag 7</option>
+<option value="8">BIN-B04 — Tag 8</option><option value="9">BIN-B05 — Tag 9</option>
+</select>
+<div class="row"><button id="start">Start Camera</button><button class="alt" id="stop">Stop</button></div>
+<div id="status">Loading AprilTag detector…</div>
+<div class="metrics" id="metrics">Tags: 0 • Detect: — ms • Processing: —</div>
+<div class="legend">Target tag = bright green box + floating arrow. Other recognized tags = thin white boxes. Move slowly while testing distance.</div>
 </div>
 </main>
 
-<script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
+<canvas id="processing" style="display:none"></canvas>
+<script src="js/tag-families.js"></script>
+<script src="js/detector-manager.js"></script>
 <script>
 (() => {
- const video=document.getElementById('video');
- const overlay=document.getElementById('overlay');
- const octx=overlay.getContext('2d');
- const scanCanvas=document.createElement('canvas');
- const sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
- const status=document.getElementById('status');
- const target=document.getElementById('target');
- let stream=null,running=false,lastScan=0,foundUntil=0,lastLoc=null;
+const detector=new AprilTagDetectorManager();
+const video=document.getElementById('video'), display=document.getElementById('display'), dctx=display.getContext('2d');
+const processing=document.getElementById('processing'), pctx=processing.getContext('2d',{willReadFrequently:true});
+const status=document.getElementById('status'), metrics=document.getElementById('metrics'), target=document.getElementById('target');
+let stream=null,running=false,lastDetections=[],detectMs=0,pw=0,ph=0;
+const names=['BIN-A01','BIN-A02','BIN-A03','BIN-A04','BIN-A05','BIN-B01','BIN-B02','BIN-B03','BIN-B04','BIN-B05'];
 
- function resizeOverlay(){
-   const r=video.getBoundingClientRect();
-   const dpr=window.devicePixelRatio||1;
-   overlay.width=Math.round(r.width*dpr);
-   overlay.height=Math.round(r.height*dpr);
-   octx.setTransform(dpr,0,0,dpr,0,0);
- }
- function mapPoint(p){
-   // Video uses object-fit: cover. Map source pixels to displayed CSS pixels.
-   const vw=video.videoWidth,vh=video.videoHeight;
-   const box=video.getBoundingClientRect();
-   const scale=Math.max(box.width/vw,box.height/vh);
-   const shownW=vw*scale, shownH=vh*scale;
-   const cropX=(shownW-box.width)/2, cropY=(shownH-box.height)/2;
-   return {x:p.x*scale-cropX,y:p.y*scale-cropY};
- }
- function drawMarker(loc,label){
-   resizeOverlay();
-   const pts=[loc.topLeftCorner,loc.topRightCorner,loc.bottomRightCorner,loc.bottomLeftCorner].map(mapPoint);
-   const cx=pts.reduce((a,p)=>a+p.x,0)/4;
-   const cy=pts.reduce((a,p)=>a+p.y,0)/4;
-   const top=Math.min(...pts.map(p=>p.y));
-   const left=Math.min(...pts.map(p=>p.x));
-   const right=Math.max(...pts.map(p=>p.x));
-   const bottom=Math.max(...pts.map(p=>p.y));
-   const w=right-left,h=bottom-top;
+function setStatus(s){status.textContent=s}
+function roundedRect(ctx,x,y,w,h,r){ctx.beginPath();ctx.roundRect(x,y,w,h,r);ctx.fill()}
 
-   octx.clearRect(0,0,overlay.clientWidth,overlay.clientHeight);
+async function init(){
+ try{
+  await detector.initialize({
+   onDetectionResult:(d,ms)=>{lastDetections=d;detectMs=ms;},
+   onError:m=>setStatus('Detector error: '+m)
+  });
+  await detector.setupDetector('tag36h11',0,{quadDecimate:1.0,quadSigma:0.0,refineEdges:true,decodeSharpening:0.25});
+  setStatus('Detector ready. Start the camera.');
+ }catch(e){setStatus('Initialization error: '+e.message)}
+}
 
-   // QR outline
-   octx.lineWidth=5;
-   octx.strokeStyle='#39ff88';
-   octx.shadowColor='#000';
-   octx.shadowBlur=8;
-   octx.strokeRect(left-8,top-8,w+16,h+16);
-   octx.shadowBlur=0;
-
-   // Arrow positioned above the QR
-   const tipY=Math.max(30,top-18);
-   const head=18;
-   const shaftTop=Math.max(14,tipY-78);
-   octx.strokeStyle='#39ff88';
-   octx.fillStyle='#39ff88';
-   octx.lineWidth=10;
-   octx.lineCap='round';
-   octx.beginPath(); octx.moveTo(cx,shaftTop); octx.lineTo(cx,tipY-head); octx.stroke();
-   octx.beginPath();
-   octx.moveTo(cx,tipY);
-   octx.lineTo(cx-head,tipY-head-3);
-   octx.lineTo(cx+head,tipY-head-3);
-   octx.closePath(); octx.fill();
-
-   // Label bubble
-   const text='PICK HERE • '+label;
-   octx.font='bold 16px -apple-system, sans-serif';
-   const tw=octx.measureText(text).width;
-   const bx=Math.max(6,Math.min(overlay.clientWidth-tw-26,cx-tw/2-13));
-   const by=Math.max(5,shaftTop-34);
-   octx.fillStyle='rgba(0,0,0,.82)';
-   octx.fillRect(bx,by,tw+26,28);
-   octx.fillStyle='#fff';
-   octx.fillText(text,bx+13,by+20);
+async function start(){
+ try{
+  stream=await navigator.mediaDevices.getUserMedia({audio:false,video:{
+   facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}
+  }});
+  video.srcObject=stream; await video.play();
+  const s=stream.getVideoTracks()[0].getSettings();
+  const vw=s.width||video.videoWidth||1920, vh=s.height||video.videoHeight||1080;
+  // Higher than the upstream demo's 640px processing width: distance > FPS for this POC.
+  pw=Math.min(vw,1280); ph=Math.round(pw*vh/vw);
+  processing.width=pw;processing.height=ph;
+  display.width=vw;display.height=vh;
+  running=true;setStatus('Searching for '+names[+target.value]+'…');
+  requestAnimationFrame(processLoop);requestAnimationFrame(renderLoop);
+ }catch(e){setStatus('Camera error: '+e.name+' — '+e.message)}
+}
+function stop(){
+ running=false;if(stream)stream.getTracks().forEach(t=>t.stop());stream=null;video.srcObject=null;
+ setStatus('Camera stopped.');
+}
+function processLoop(){
+ if(!running)return;requestAnimationFrame(processLoop);
+ if(!detector.initialized||detector.getStatus().busy||video.readyState<2)return;
+ pctx.drawImage(video,0,0,pw,ph);
+ const im=pctx.getImageData(0,0,pw,ph);
+ detector.detect(im,pw,ph).catch(()=>{});
+}
+function renderLoop(){
+ if(!running)return;requestAnimationFrame(renderLoop);
+ const W=display.width,H=display.height;
+ dctx.clearRect(0,0,W,H); if(video.readyState>=2)dctx.drawImage(video,0,0,W,H);
+ const sx=W/pw,sy=H/ph, wanted=+target.value;
+ let found=false;
+ for(const det of lastDetections){
+   const pts=det.corners.map(p=>({x:p.x*sx,y:p.y*sy}));
+   const isTarget=det.id===wanted; if(isTarget)found=true;
+   dctx.save();dctx.strokeStyle=isTarget?'#39ff88':'rgba(255,255,255,.8)';dctx.lineWidth=isTarget?10:3;
+   dctx.beginPath();dctx.moveTo(pts[0].x,pts[0].y);for(let i=1;i<4;i++)dctx.lineTo(pts[i].x,pts[i].y);dctx.closePath();dctx.stroke();
+   if(isTarget){
+     const cx=det.center.x*sx, top=Math.min(...pts.map(p=>p.y)), tip=Math.max(55,top-25);
+     dctx.strokeStyle='#39ff88';dctx.fillStyle='#39ff88';dctx.lineWidth=14;dctx.lineCap='round';
+     dctx.beginPath();dctx.moveTo(cx,Math.max(30,tip-150));dctx.lineTo(cx,tip-34);dctx.stroke();
+     dctx.beginPath();dctx.moveTo(cx,tip);dctx.lineTo(cx-34,tip-42);dctx.lineTo(cx+34,tip-42);dctx.closePath();dctx.fill();
+     const txt='PICK HERE • '+names[wanted];dctx.font='bold 34px -apple-system,sans-serif';
+     const tw=dctx.measureText(txt).width,bx=Math.max(10,Math.min(W-tw-36,cx-tw/2-18)),by=Math.max(10,tip-205);
+     dctx.fillStyle='rgba(0,0,0,.82)';roundedRect(dctx,bx,by,tw+36,52,10);
+     dctx.fillStyle='#fff';dctx.fillText(txt,bx+18,by+38);
+   }
+   dctx.restore();
  }
-
- function clearMarker(){
-   resizeOverlay();
-   octx.clearRect(0,0,overlay.clientWidth,overlay.clientHeight);
- }
-
- async function start(){
-   try{
-     if(!window.isSecureContext){status.textContent='HTTPS secure context required.';return;}
-     stream=await navigator.mediaDevices.getUserMedia({
-       audio:false, video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}
-     });
-     video.srcObject=stream;
-     await video.play();
-     running=true;
-     status.textContent='Searching for '+target.value+'…';
-     requestAnimationFrame(loop);
-   }catch(e){status.textContent='Camera error: '+e.name+' — '+e.message;}
- }
- function stop(){
-   running=false;
-   if(stream)stream.getTracks().forEach(t=>t.stop());
-   stream=null;video.srcObject=null;clearMarker();status.textContent='Camera stopped.';
- }
- function loop(t){
-   if(!running)return;
-   if(video.readyState>=2 && t-lastScan>100){
-     lastScan=t;
-     const vw=video.videoWidth,vh=video.videoHeight;
-     if(vw&&vh){
-       // Downscale moderately for speed while retaining enough detail for distance tests.
-       const maxW=960;
-       const scale=Math.min(1,maxW/vw);
-       scanCanvas.width=Math.round(vw*scale);
-       scanCanvas.height=Math.round(vh*scale);
-       sctx.drawImage(video,0,0,scanCanvas.width,scanCanvas.height);
-       const im=sctx.getImageData(0,0,scanCanvas.width,scanCanvas.height);
-       const code=typeof jsQR==='function'?jsQR(im.data,im.width,im.height,{inversionAttempts:'dontInvert'}):null;
-       if(code && code.data){
-         // Convert decoder coordinates back to native video coordinates.
-         const inv=1/scale;
-         const loc={};
-         for(const k of ['topLeftCorner','topRightCorner','bottomRightCorner','bottomLeftCorner']){
-           loc[k]={x:code.location[k].x*inv,y:code.location[k].y*inv};
-         }
-         if(code.data.trim().toUpperCase()===target.value){
-           lastLoc=loc;foundUntil=t+350;
-           drawMarker(loc,target.value);
-           status.textContent='✓ TARGET FOUND: '+target.value;
-         }else{
-           status.textContent='Saw '+code.data+' — still looking for '+target.value+'…';
-         }
-       }
-       if(t>foundUntil){
-         lastLoc=null;clearMarker();
-         if(!code)status.textContent='Searching for '+target.value+'…';
-       }
-     }
-   } else if(lastLoc && t<=foundUntil) drawMarker(lastLoc,target.value);
-   requestAnimationFrame(loop);
- }
- target.addEventListener('change',()=>{foundUntil=0;lastLoc=null;clearMarker();status.textContent=running?'Searching for '+target.value+'…':'Target set to '+target.value+'.';});
- document.getElementById('start').onclick=start;
- document.getElementById('stop').onclick=stop;
- window.addEventListener('resize',()=>{if(lastLoc)drawMarker(lastLoc,target.value);});
- window.addEventListener('pagehide',stop);
+ setStatus(found?'✓ TARGET FOUND: '+names[wanted]:'Searching for '+names[wanted]+'…');
+ metrics.textContent=`Tags: ${lastDetections.length} • Detect: ${detectMs?detectMs.toFixed(0):'—'} ms • Processing: ${pw}×${ph}`;
+}
+target.onchange=()=>{lastDetections=[];if(running)setStatus('Searching for '+names[+target.value]+'…')};
+document.getElementById('start').onclick=start;document.getElementById('stop').onclick=stop;
+window.addEventListener('pagehide',stop);init();
 })();
 </script>
-</body>
-</html>
+</body></html>
