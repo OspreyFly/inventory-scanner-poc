@@ -1,163 +1,198 @@
 <!doctype html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
-  <meta name="theme-color" content="#111827">
-  <title>Inventory Scanner POC</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: #0b1220; color: #f8fafc; min-height: 100vh;
-    }
-    main { max-width: 680px; margin: auto; padding: 18px; }
-    h1 { font-size: 1.45rem; margin: 6px 0 4px; }
-    .sub { color: #94a3b8; margin: 0 0 16px; }
-    .card {
-      background: #111827; border: 1px solid #334155; border-radius: 16px;
-      padding: 14px; margin-bottom: 14px;
-    }
-    video {
-      display: block; width: 100%; aspect-ratio: 4/3; object-fit: cover;
-      background: #000; border-radius: 12px;
-    }
-    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px; }
-    button {
-      min-height: 48px; border: 0; border-radius: 12px; font-size: 1rem;
-      font-weight: 700; padding: 10px 12px;
-    }
-    .primary { background: #f8fafc; color: #0f172a; }
-    .secondary { background: #334155; color: #f8fafc; }
-    .status { margin-top: 12px; color: #cbd5e1; line-height: 1.35; }
-    .result {
-      font-size: 2rem; font-weight: 800; overflow-wrap: anywhere;
-      padding: 18px 8px; text-align: center;
-    }
-    .good { border-color: #22c55e; }
-    .bad { border-color: #ef4444; }
-    .label { color: #94a3b8; font-size: .85rem; text-transform: uppercase; letter-spacing: .08em; }
-    input {
-      width: 100%; min-height: 46px; margin-top: 8px; border-radius: 10px;
-      border: 1px solid #475569; padding: 10px; font-size: 1rem;
-      background: #0f172a; color: white;
-    }
-    code { color: #e2e8f0; }
-  </style>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#05070b">
+<title>Guided Pick AR POC</title>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;background:#05070b;color:white;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+main{max-width:760px;margin:auto;padding:14px}
+h1{font-size:1.3rem;margin:5px 0}
+p{color:#aeb8c8;margin:4px 0 12px}
+.camera{position:relative;width:100%;overflow:hidden;border-radius:16px;background:#000;aspect-ratio:3/4;border:1px solid #293241}
+video,canvas{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+canvas{pointer-events:none}
+.panel{background:#111722;border:1px solid #293241;border-radius:14px;padding:12px;margin-top:12px}
+.row{display:flex;gap:8px}
+button,select{min-height:46px;border:0;border-radius:11px;font-size:1rem;font-weight:700;padding:9px 12px}
+button{flex:1;background:white;color:#10151e}
+button.alt{background:#303b4d;color:white}
+select{width:100%;background:#202938;color:white;border:1px solid #435067}
+.label{font-size:.78rem;color:#91a0b5;text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px}
+#status{font-weight:700;margin-top:10px;line-height:1.35}
+.hint{font-size:.88rem;color:#91a0b5;margin-top:8px}
+</style>
 </head>
 <body>
 <main>
-  <h1>Inventory Scanner POC</h1>
-  <p class="sub">iPhone / Safari test • expected marker: <strong>BIN-A04</strong></p>
+<h1>Guided Pick — AR Marker POC</h1>
+<p>Choose a target bin, start the camera, then look across your QR labels.</p>
 
-  <section class="card">
-    <video id="video" playsinline muted></video>
-    <div class="buttons">
-      <button class="primary" id="start">Start Camera</button>
-      <button class="secondary" id="stop">Stop</button>
-    </div>
-    <div class="status" id="status">Camera not started.</div>
-  </section>
+<div class="camera" id="cameraBox">
+  <video id="video" playsinline muted></video>
+  <canvas id="overlay"></canvas>
+</div>
 
-  <section class="card" id="resultCard">
-    <div class="label">Last scanned value</div>
-    <div class="result" id="result">—</div>
-  </section>
-
-  <section class="card">
-    <div class="label">Manual fallback</div>
-    <input id="manual" value="BIN-A04" autocapitalize="characters">
-    <button class="secondary" id="submit" style="width:100%;margin-top:10px">Submit Marker</button>
-  </section>
+<div class="panel">
+  <div class="label">Target location</div>
+  <select id="target">
+    <option>BIN-A01</option><option>BIN-A02</option><option>BIN-A03</option>
+    <option selected>BIN-A04</option><option>BIN-A05</option>
+    <option>BIN-B01</option><option>BIN-B02</option><option>BIN-B03</option>
+    <option>BIN-B04</option><option>BIN-B05</option>
+  </select>
+  <div class="row" style="margin-top:10px">
+    <button id="start">Start Camera</button>
+    <button id="stop" class="alt">Stop</button>
+  </div>
+  <div id="status">Camera not started.</div>
+  <div class="hint">The app highlights only the selected bin. Move the camera slowly across the labels.</div>
+</div>
 </main>
 
 <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.js"></script>
 <script>
 (() => {
-  const EXPECTED = "BIN-A04";
-  const video = document.getElementById("video");
-  const status = document.getElementById("status");
-  const result = document.getElementById("result");
-  const resultCard = document.getElementById("resultCard");
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d", { willReadFrequently: true });
-  let stream = null, running = false, lastValue = "", lastTime = 0;
+ const video=document.getElementById('video');
+ const overlay=document.getElementById('overlay');
+ const octx=overlay.getContext('2d');
+ const scanCanvas=document.createElement('canvas');
+ const sctx=scanCanvas.getContext('2d',{willReadFrequently:true});
+ const status=document.getElementById('status');
+ const target=document.getElementById('target');
+ let stream=null,running=false,lastScan=0,foundUntil=0,lastLoc=null;
 
-  function report(value) {
-    value = String(value || "").trim();
-    if (!value) return;
-    result.textContent = value;
-    resultCard.classList.remove("good", "bad");
-    const ok = value.toUpperCase() === EXPECTED;
-    resultCard.classList.add(ok ? "good" : "bad");
-    status.textContent = ok
-      ? "✓ Correct marker. Expected " + EXPECTED + "."
-      : "✗ Wrong marker. Expected " + EXPECTED + ".";
-    if (navigator.vibrate) navigator.vibrate(ok ? 100 : [80,60,80]);
-  }
+ function resizeOverlay(){
+   const r=video.getBoundingClientRect();
+   const dpr=window.devicePixelRatio||1;
+   overlay.width=Math.round(r.width*dpr);
+   overlay.height=Math.round(r.height*dpr);
+   octx.setTransform(dpr,0,0,dpr,0,0);
+ }
+ function mapPoint(p){
+   // Video uses object-fit: cover. Map source pixels to displayed CSS pixels.
+   const vw=video.videoWidth,vh=video.videoHeight;
+   const box=video.getBoundingClientRect();
+   const scale=Math.max(box.width/vw,box.height/vh);
+   const shownW=vw*scale, shownH=vh*scale;
+   const cropX=(shownW-box.width)/2, cropY=(shownH-box.height)/2;
+   return {x:p.x*scale-cropX,y:p.y*scale-cropY};
+ }
+ function drawMarker(loc,label){
+   resizeOverlay();
+   const pts=[loc.topLeftCorner,loc.topRightCorner,loc.bottomRightCorner,loc.bottomLeftCorner].map(mapPoint);
+   const cx=pts.reduce((a,p)=>a+p.x,0)/4;
+   const cy=pts.reduce((a,p)=>a+p.y,0)/4;
+   const top=Math.min(...pts.map(p=>p.y));
+   const left=Math.min(...pts.map(p=>p.x));
+   const right=Math.max(...pts.map(p=>p.x));
+   const bottom=Math.max(...pts.map(p=>p.y));
+   const w=right-left,h=bottom-top;
 
-  async function startCamera() {
-    try {
-      if (!window.isSecureContext) {
-        status.textContent = "This page is not a secure HTTPS context.";
-        return;
-      }
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        status.textContent = "Camera API unavailable in this browser.";
-        return;
-      }
-      stream = await navigator.mediaDevices.getUserMedia({
-        audio: false,
-        video: { facingMode: { ideal: "environment" } }
-      });
-      video.srcObject = stream;
-      await video.play();
-      running = true;
-      status.textContent = "Camera active. Point it at a QR code.";
-      requestAnimationFrame(scan);
-    } catch (err) {
-      status.textContent = "Camera error: " + (err.name || "Error") + " — " + (err.message || err);
-    }
-  }
+   octx.clearRect(0,0,overlay.clientWidth,overlay.clientHeight);
 
-  function stopCamera() {
-    running = false;
-    if (stream) stream.getTracks().forEach(t => t.stop());
-    stream = null;
-    video.srcObject = null;
-    status.textContent = "Camera stopped.";
-  }
+   // QR outline
+   octx.lineWidth=5;
+   octx.strokeStyle='#39ff88';
+   octx.shadowColor='#000';
+   octx.shadowBlur=8;
+   octx.strokeRect(left-8,top-8,w+16,h+16);
+   octx.shadowBlur=0;
 
-  function scan(now) {
-    if (!running) return;
-    if (video.readyState >= 2 && video.videoWidth && video.videoHeight && now - lastTime > 120) {
-      lastTime = now;
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      if (typeof jsQR === "function") {
-        const code = jsQR(imageData.data, imageData.width, imageData.height, {
-          inversionAttempts: "dontInvert"
-        });
-        if (code && code.data && code.data !== lastValue) {
-          lastValue = code.data;
-          report(code.data);
-          setTimeout(() => { lastValue = ""; }, 1200);
-        }
-      } else {
-        status.textContent = "QR decoder did not load. Check internet access and reload.";
-      }
-    }
-    requestAnimationFrame(scan);
-  }
+   // Arrow positioned above the QR
+   const tipY=Math.max(30,top-18);
+   const head=18;
+   const shaftTop=Math.max(14,tipY-78);
+   octx.strokeStyle='#39ff88';
+   octx.fillStyle='#39ff88';
+   octx.lineWidth=10;
+   octx.lineCap='round';
+   octx.beginPath(); octx.moveTo(cx,shaftTop); octx.lineTo(cx,tipY-head); octx.stroke();
+   octx.beginPath();
+   octx.moveTo(cx,tipY);
+   octx.lineTo(cx-head,tipY-head-3);
+   octx.lineTo(cx+head,tipY-head-3);
+   octx.closePath(); octx.fill();
 
-  document.getElementById("start").addEventListener("click", startCamera);
-  document.getElementById("stop").addEventListener("click", stopCamera);
-  document.getElementById("submit").addEventListener("click", () => {
-    report(document.getElementById("manual").value);
-  });
-  window.addEventListener("pagehide", stopCamera);
+   // Label bubble
+   const text='PICK HERE • '+label;
+   octx.font='bold 16px -apple-system, sans-serif';
+   const tw=octx.measureText(text).width;
+   const bx=Math.max(6,Math.min(overlay.clientWidth-tw-26,cx-tw/2-13));
+   const by=Math.max(5,shaftTop-34);
+   octx.fillStyle='rgba(0,0,0,.82)';
+   octx.fillRect(bx,by,tw+26,28);
+   octx.fillStyle='#fff';
+   octx.fillText(text,bx+13,by+20);
+ }
+
+ function clearMarker(){
+   resizeOverlay();
+   octx.clearRect(0,0,overlay.clientWidth,overlay.clientHeight);
+ }
+
+ async function start(){
+   try{
+     if(!window.isSecureContext){status.textContent='HTTPS secure context required.';return;}
+     stream=await navigator.mediaDevices.getUserMedia({
+       audio:false, video:{facingMode:{ideal:'environment'},width:{ideal:1920},height:{ideal:1080}}
+     });
+     video.srcObject=stream;
+     await video.play();
+     running=true;
+     status.textContent='Searching for '+target.value+'…';
+     requestAnimationFrame(loop);
+   }catch(e){status.textContent='Camera error: '+e.name+' — '+e.message;}
+ }
+ function stop(){
+   running=false;
+   if(stream)stream.getTracks().forEach(t=>t.stop());
+   stream=null;video.srcObject=null;clearMarker();status.textContent='Camera stopped.';
+ }
+ function loop(t){
+   if(!running)return;
+   if(video.readyState>=2 && t-lastScan>100){
+     lastScan=t;
+     const vw=video.videoWidth,vh=video.videoHeight;
+     if(vw&&vh){
+       // Downscale moderately for speed while retaining enough detail for distance tests.
+       const maxW=960;
+       const scale=Math.min(1,maxW/vw);
+       scanCanvas.width=Math.round(vw*scale);
+       scanCanvas.height=Math.round(vh*scale);
+       sctx.drawImage(video,0,0,scanCanvas.width,scanCanvas.height);
+       const im=sctx.getImageData(0,0,scanCanvas.width,scanCanvas.height);
+       const code=typeof jsQR==='function'?jsQR(im.data,im.width,im.height,{inversionAttempts:'dontInvert'}):null;
+       if(code && code.data){
+         // Convert decoder coordinates back to native video coordinates.
+         const inv=1/scale;
+         const loc={};
+         for(const k of ['topLeftCorner','topRightCorner','bottomRightCorner','bottomLeftCorner']){
+           loc[k]={x:code.location[k].x*inv,y:code.location[k].y*inv};
+         }
+         if(code.data.trim().toUpperCase()===target.value){
+           lastLoc=loc;foundUntil=t+350;
+           drawMarker(loc,target.value);
+           status.textContent='✓ TARGET FOUND: '+target.value;
+         }else{
+           status.textContent='Saw '+code.data+' — still looking for '+target.value+'…';
+         }
+       }
+       if(t>foundUntil){
+         lastLoc=null;clearMarker();
+         if(!code)status.textContent='Searching for '+target.value+'…';
+       }
+     }
+   } else if(lastLoc && t<=foundUntil) drawMarker(lastLoc,target.value);
+   requestAnimationFrame(loop);
+ }
+ target.addEventListener('change',()=>{foundUntil=0;lastLoc=null;clearMarker();status.textContent=running?'Searching for '+target.value+'…':'Target set to '+target.value+'.';});
+ document.getElementById('start').onclick=start;
+ document.getElementById('stop').onclick=stop;
+ window.addEventListener('resize',()=>{if(lastLoc)drawMarker(lastLoc,target.value);});
+ window.addEventListener('pagehide',stop);
 })();
 </script>
 </body>
